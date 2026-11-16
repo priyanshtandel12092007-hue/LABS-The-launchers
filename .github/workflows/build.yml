@@ -17,13 +17,14 @@ jobs:
           if ls *.zip 1> /dev/null 2>&1; then
             unzip -o "*.zip"
           fi
-          # If gradlew is inside a subfolder, move everything to the root
-          if [ ! -f "./gradlew" ]; then
-            SUBDIR=$(find . -maxdepth 2 -name "gradlew" -printf "%h\n" | head -n 1)
+          # Locate build.gradle or build.gradle.kts if nested inside a subfolder
+          if [ ! -f "./build.gradle" ] && [ ! -f "./build.gradle.kts" ]; then
+            SUBDIR=$(find . -maxdepth 3 \( -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "*/app/*" -printf "%h\n" | head -n 1)
             if [ -n "$SUBDIR" ]; then
               cp -rn "$SUBDIR"/. .
             fi
           fi
+          ls -la
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -31,11 +32,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
 
       - name: Upload LABS APK
         uses: actions/upload-artifact@v4
