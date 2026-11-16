@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -15,16 +16,47 @@ jobs:
       - name: Unzip project files
         run: |
           if ls *.zip 1> /dev/null 2>&1; then
-            unzip -o "*.zip"
+            unzip -oq "*.zip" < /dev/null
           fi
-          # Locate build.gradle or build.gradle.kts if nested inside a subfolder
           if [ ! -f "./build.gradle" ] && [ ! -f "./build.gradle.kts" ]; then
             SUBDIR=$(find . -maxdepth 3 \( -name "build.gradle" -o -name "build.gradle.kts" \) -not -path "*/app/*" -printf "%h\n" | head -n 1)
             if [ -n "$SUBDIR" ]; then
               cp -rn "$SUBDIR"/. .
             fi
           fi
-          ls -la
+
+      - name: Generate placeholder google-services.json if missing
+        run: |
+          if [ ! -f "app/google-services.json" ]; then
+            PKG=$(grep -E "applicationId" app/build.gradle* | head -n 1 | sed -E 's/.*applicationId[[:space:]=]+["'\'']([^"'\'']+)["'\''].*/\1/')
+            PKG=${PKG:-"com.labs.launcher"}
+            echo "Creating dummy google-services.json for package: $PKG"
+            cat <<EOF > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "123456789000",
+              "project_id": "labs-launcher-placeholder",
+              "storage_bucket": "labs-launcher-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789000:android:1234567890abcdef",
+                  "android_client_info": {
+                    "package_name": "$PKG"
+                  }
+                },
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyDummyKeyForLocalBuildOnly000000000"
+                  }
+                ]
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -33,12 +65,14 @@ jobs:
           distribution: 'temurin'
 
       - name: Build Debug APK
+        env:
+          GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false"
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x gradlew
-            ./gradlew assembleDebug
+            ./gradlew assembleDebug --no-daemon
           else
-            gradle assembleDebug
+            gradle assembleDebug --no-daemon
           fi
 
       - name: Upload LABS APK
